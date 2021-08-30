@@ -1,0 +1,84 @@
+---
+title: "Reproducible research course project 1: personal movement study"
+author: "Chongliang Luo"
+date: "8/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=F, message=F)
+```
+
+## Loading and preprocessing the data
+
+```{r data} 
+require(data.table)
+# read in the data from url directly
+dt <- fread("curl https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip | funzip")
+dt
+```
+
+
+## What is mean total number of steps taken per day?
+
+```{r daymean}
+# Histogram of the total number of steps taken each day
+dt.day <- dt[,.(steps=sum(steps, na.rm=T)), by=date]
+dt.day[,hist(steps, breaks=25)]
+
+# Mean and median number of steps taken each day
+dt.day[,mean(steps)]
+dt.day[,median(steps)]
+```
+Notice that during the 2-month period (10/01/2012 - 11/30/2012), the daily number of steps is between 10000 and 15000 for 28 days, and the mean and median number of steps taken each day are 9354.23 and 10395 respectively.
+
+## What is the average daily activity pattern?
+
+```{r daily}
+# Time series plot of the average number of steps taken
+dt.int <- dt[,.(steps.mean=mean(steps, na.rm=T),
+                steps.median=median(steps, na.rm=T)), by=interval] 
+n.int <- 24*60/5 # number of 5-min intervals in a day
+dt.int[,plot(steps.mean ~ c(1:n.int), xlab='Time',
+             ylab='Average steps in each 5-min interval', xaxt='n', type='l')]
+axis(1,seq(0,n.int-12,by=12)+1, dt.int$interval[seq(0,n.int-12,by=12)+1])
+
+# The 5-minute interval that, on average, contains the maximum number of steps
+dt.int[which.max(steps.mean), interval]
+```
+We can see that the  daily movement peaks at around 9am, 12pm, 4pm and 7pm. The 5-minute interval that, on average, contains the maximum number of steps is 8:35-8:40am.
+
+##   Imputing missing values
+We impute the missing steps of any 5-min interval by the median steps of that interval across all days. This is  reasonable as many of the intervals have sparse steps (e.g. barely no steps between 12am and 5am). We then use the imputed step counts to check the distribution of total number of steps taken each day.
+
+```{r impute}
+dt.int
+# impute the missing steps by the median steps of that interval across all days
+dt[,steps.imp:=steps][is.na(steps), steps.imp:=dt.int$steps.median[match(interval, dt.int$interval)]]
+
+# Histogram of the total number of steps taken each day after missing values are imputed
+dt[,.(steps.imp=sum(steps.imp, na.rm=T)), by=date][,hist(steps.imp, breaks=25)]
+```
+Notice that the distribution of steps taken each day after imputation is close to that before imputation. By comparing the two histograms, steps of 8 days were below 1000, but are imputed as between 1000 and 2000. 
+
+##   Are there differences in activity patterns between weekdays and weekends?
+
+```{r weekday}
+# the average number of steps taken per 5-minute interval across weekdays and weekends
+dt[,weekday:=ifelse(weekdays(date)%in%c('Saturday', 'Sunday'), 'weekend', 'weekday')]
+dt.weekday <- dt[,.(steps.mean=mean(steps.imp)),by=.(interval,weekday)]
+dt.weekday[,idx:=rep(1:n.int, 2)] # add index for intervals for convenience of making the plot
+dt.weekday
+
+require(ggplot2)
+ggplot(dt.weekday, aes(x=idx, y=steps.mean))+ 
+  facet_wrap(~weekday,nrow=2) + geom_line() +   
+  labs(x='Interval', y='Number of steps') + 
+  scale_x_discrete(breaks=seq(0,n.int-12,by=12)+1, 
+                   labels=dt.int$interval[seq(0,n.int-12,by=12)+1],
+                   limits=seq(0,n.int-12,by=12)+1)
+
+dt.weekday[,.(total=sum(steps.mean)),by=weekday]
+```
+
+We see that compared to weekdays, there are few steps in the morning until 8am, and more steps in the evening between 8 and 9. Also, the steps during weekends are more averaged than that during weekdays, and  the total steps  on average is  8972.489 in a weekday, and 10998.375 in a weekend day.
